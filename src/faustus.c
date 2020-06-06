@@ -150,6 +150,8 @@ struct bios_args {
 	u32 arg0;
 	u32 arg1;
 	u32 arg2; /* At least TUF Gaming series uses 3 dword input buffer. */
+	u32 arg3;
+	u32 arg4;
 } __packed;
 
 /*
@@ -315,13 +317,15 @@ static void asus_wmi_input_exit(struct asus_wmi *asus)
 
 /* WMI ************************************************************************/
 
-static int asus_wmi_evaluate_method3(u32 method_id,
-		u32 arg0, u32 arg1, u32 arg2, u32 *retval)
+static int asus_wmi_evaluate_method5(u32 method_id,
+		u32 arg0, u32 arg1, u32 arg2, u32 arg3, u32 arg4, u32 *retval)
 {
 	struct bios_args args = {
 		.arg0 = arg0,
 		.arg1 = arg1,
 		.arg2 = arg2,
+		.arg3 = arg3,
+		.arg4 = arg4,
 	};
 	struct acpi_buffer input = { (acpi_size) sizeof(args), &args };
 	struct acpi_buffer output = { ACPI_ALLOCATE_BUFFER, NULL };
@@ -348,6 +352,12 @@ static int asus_wmi_evaluate_method3(u32 method_id,
 		return -ENODEV;
 
 	return 0;
+}
+
+static int asus_wmi_evaluate_method3(u32 method_id, 
+		u32 arg0, u32 arg1, u32 arg2, u32 *retval)
+{
+	return asus_wmi_evaluate_method5(method_id, arg0, arg1, arg2, 0, 0, retval);
 }
 
 static int asus_wmi_evaluate_method(u32 method_id, u32 arg0, u32 arg1, u32 *retval)
@@ -1982,6 +1992,7 @@ static int fan_boost_mode_check_present(struct asus_wmi *asus)
 	err = asus_wmi_get_devstate(asus, ASUS_WMI_DEVID_FAN_BOOST_MODE,
 				    &result);
 	if (err) {
+		pr_info("Fan boost mode check unsuccessful, err");
 		if (err == -ENODEV)
 			return 0;
 		else
@@ -1990,9 +2001,12 @@ static int fan_boost_mode_check_present(struct asus_wmi *asus)
 
 	if ((result & ASUS_WMI_DSTS_PRESENCE_BIT) &&
 			(result & ASUS_FAN_BOOST_MODES_MASK)) {
+		pr_info("Fan boost mode check successful");
 		asus->fan_boost_mode_available = true;
 		asus->fan_boost_mode_mask = result & ASUS_FAN_BOOST_MODES_MASK;
 	}
+
+	pr_info("Fan boost mode check end");
 
 	return 0;
 }
@@ -2097,13 +2111,19 @@ static int throttle_thermal_policy_check_present(struct asus_wmi *asus)
 				    ASUS_WMI_DEVID_THROTTLE_THERMAL_POLICY,
 				    &result);
 	if (err) {
+		pr_info("TTP check unsuccessful, err");
 		if (err == -ENODEV)
 			return 0;
 		return err;
 	}
 
 	if (result & ASUS_WMI_DSTS_PRESENCE_BIT)
+	{
+		pr_info("TTP check successful");
 		asus->throttle_thermal_policy_available = true;
+	}
+
+	pr_info("TTP check end");
 
 	return 0;
 }
