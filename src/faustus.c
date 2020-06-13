@@ -51,7 +51,7 @@
 #include <linux/version.h>
 #if LINUX_VERSION_CODE > KERNEL_VERSION(5,6,0)
 #include <acpi/video.h>
-//'#include <linux/units.h>
+#include <linux/units.h>
 #else
 #define ABSOLUTE_ZERO_MILLICELSIUS -273150
 #define MILLIDEGREE_PER_DECIDEGREE 100
