@@ -1770,6 +1770,7 @@ static ssize_t fan1_input_show(struct device *dev,
 		ret = asus_wmi_get_devstate(asus, ASUS_WMI_DEVID_CPU_FAN_CTRL,
 					    &value);
 		if (ret < 0)
+			pr_info("reading fan speed failed: %d\n", ret);
 			return ret;
 
 		value &= 0xffff;
@@ -2151,6 +2152,7 @@ static int throttle_thermal_policy_write(struct asus_wmi *asus)
 		return -EIO;
 	}
 
+	pr_info("Set throttle thermal policy mode: %u\n", value);
 	return 0;
 }
 
