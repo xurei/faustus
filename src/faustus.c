@@ -491,6 +491,7 @@ static int asus_wmi_battery_add(struct power_supply *battery)
 	 * battery is named BATT.
 	 */
 	if (strcmp(battery->desc->name, "BAT0") != 0 &&
+	    strcmp(battery->desc->name, "BAT1") != 0 &&
 	    strcmp(battery->desc->name, "BATT") != 0)
 		return -ENODEV;
 
@@ -1964,16 +1965,31 @@ static int asus_wmi_hwmon_init(struct asus_wmi *asus)
 
 static int asus_wmi_fan_init(struct asus_wmi *asus)
 {
+	pr_info("asus_wmi_fan_init start");
 	asus->fan_type = FAN_TYPE_NONE;
 	asus->agfn_pwm = -1;
 
 	if (asus_wmi_dev_is_present(asus, ASUS_WMI_DEVID_CPU_FAN_CTRL))
+	{
 		asus->fan_type = FAN_TYPE_SPEC83;
+		pr_info("Spec 8.3 fan found");
+	}
 	else if (asus_wmi_has_agfn_fan(asus))
+	{
+		pr_info("AGFN fan found");
 		asus->fan_type = FAN_TYPE_AGFN;
+	}
+	else 
+	{
+		pr_info("It seems that newer models don't have verification for method");
+		asus->fan_type = FAN_TYPE_SPEC83;
+	}
 
 	if (asus->fan_type == FAN_TYPE_NONE)
+	{
+		pr_info("No fan found");
 		return -ENODEV;
+	}
 
 	asus_fan_set_auto(asus);
 	asus->fan_pwm_mode = ASUS_FAN_CTRL_AUTO;
@@ -2128,29 +2144,7 @@ static int throttle_thermal_policy_check_present(struct asus_wmi *asus)
 	return 0;
 }
 
-static int throttle_thermal_policy_write(struct asus_wmi *asus)
-{
-	int err;
-	u8 value;
-	u32 retval;
-
-	value = asus->throttle_thermal_policy_mode;
-
-	err = asus_wmi_set_devstate(ASUS_WMI_DEVID_THROTTLE_THERMAL_POLICY,
-				    value, &retval);
-	if (err) {
-		pr_warn("Failed to set throttle thermal policy: %d\n", err);
-		return err;
-	}
-
-	if (retval != 1) {
-		pr_warn("Failed to set throttle thermal policy (retval): 0x%x\n",
-			retval);
-		return -EIO;
-	}
-
-	return 0;
-}
+static int throttle_thermal_policy_write(struct asus_wmi *asus);
 
 static int throttle_thermal_policy_set_default(struct asus_wmi *asus)
 {
@@ -2204,6 +2198,34 @@ static ssize_t throttle_thermal_policy_store(struct device *dev,
 
 // Throttle thermal policy: 0 - default, 1 - overboost, 2 - silent
 static DEVICE_ATTR_RW(throttle_thermal_policy);
+
+static int throttle_thermal_policy_write(struct asus_wmi *asus)
+{
+	int err;
+	u8 value;
+	u32 retval;
+
+	value = asus->throttle_thermal_policy_mode;
+
+	pr_info("Set throttle thermal policy mode: %u\n", value);
+	sysfs_notify(&asus->platform_device->dev.kobj, NULL, 
+			dev_attr_throttle_thermal_policy.attr.name);
+
+	err = asus_wmi_set_devstate(ASUS_WMI_DEVID_THROTTLE_THERMAL_POLICY,
+				    value, &retval);
+	if (err) {
+		pr_warn("Failed to set throttle thermal policy: %d\n", err);
+		return err;
+	}
+
+	if (retval != 0) {
+		pr_warn("Failed to set throttle thermal policy (retval): 0x%x\n",
+			retval);
+		return -EIO;
+	}
+
+	return 0;
+}
 
 /* Backlight ******************************************************************/
 
