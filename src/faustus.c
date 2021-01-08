@@ -95,12 +95,13 @@ MODULE_PARM_DESC(report_key_events, "Forward fan mode key events");
 #define NOTIFY_KBD_BRTUP		0xc4
 #define NOTIFY_KBD_BRTDWN		0xc5
 #define NOTIFY_KBD_BRTTOGGLE		0xc7
-#define NOTIFY_KBD_FBM			0x99
-#define NOTIFY_KBD_TTP			0xae
+#define NOTIFY_KBD_FBM			0xae
+#define NOTIFY_KBD_TTP			0x9e
 
 #define ASUS_WMI_FNLOCK_BIOS_DISABLED	BIT(0)
 
-#define ASUS_FAN_DESC			"cpu_fan"
+#define ASUS_CPU_FAN_DESC		"cpu_fan"
+#define ASUS_GPU_FAN_DESC		"gpu_fan"
 #define ASUS_FAN_MFUN			0x13
 #define ASUS_FAN_SFUN_READ		0x06
 #define ASUS_FAN_SFUN_WRITE		0x07
@@ -504,8 +505,8 @@ static int asus_wmi_battery_add(struct power_supply *battery)
 	 * and we can't get the current threshold so let set it to 100% when
 	 * a battery is added.
 	 */
-	asus_wmi_set_devstate(ASUS_WMI_DEVID_RSOC, 100, NULL);
-	charge_end_threshold = 100;
+	asus_wmi_set_devstate(ASUS_WMI_DEVID_RSOC, 60, NULL);
+	charge_end_threshold = 60;
 
 	return 0;
 }
@@ -1770,8 +1771,46 @@ static ssize_t fan1_input_show(struct device *dev,
 	case FAN_TYPE_SPEC83:
 		ret = asus_wmi_get_devstate(asus, ASUS_WMI_DEVID_CPU_FAN_CTRL,
 					    &value);
-		if (ret < 0)
+		if (ret < 0) {
 			pr_info("reading fan speed failed: %d\n", ret);
+			return ret;
+		}
+
+		value &= 0xffff;
+		break;
+
+	case FAN_TYPE_AGFN:
+		/* no speed readable on manual mode */
+		if (asus->fan_pwm_mode == ASUS_FAN_CTRL_MANUAL)
+			return -ENXIO;
+
+		ret = asus_agfn_fan_speed_read(asus, 1, &value);
+		if (ret) {
+			pr_warn("reading fan speed failed: %d\n", ret);
+			return -ENXIO;
+		}
+		break;
+
+	default:
+		return -ENXIO;
+	}
+
+	return sprintf(buf, "%d\n", value < 0 ? -1 : value*100);
+}
+
+static ssize_t fan2_input_show(struct device *dev,
+					struct device_attribute *attr,
+					char *buf)
+{
+	struct asus_wmi *asus = dev_get_drvdata(dev);
+	int value;
+	int ret;
+
+	switch (asus->fan_type) {
+	case FAN_TYPE_SPEC83:
+		ret = asus_wmi_get_devstate(asus, ASUS_WMI_DEVID_GPU_FAN_CTRL,
+					    &value);
+		if (ret < 0)
 			return ret;
 
 		value &= 0xffff;
@@ -1872,7 +1911,14 @@ static ssize_t fan1_label_show(struct device *dev,
 					  struct device_attribute *attr,
 					  char *buf)
 {
-	return sprintf(buf, "%s\n", ASUS_FAN_DESC);
+	return sprintf(buf, "%s\n", ASUS_CPU_FAN_DESC);
+}
+
+static ssize_t fan2_label_show(struct device *dev,
+					  struct device_attribute *attr,
+					  char *buf)
+{
+	return sprintf(buf, "%s\n", ASUS_GPU_FAN_DESC);
 }
 
 static ssize_t asus_hwmon_temp1(struct device *dev,
@@ -1897,6 +1943,10 @@ static DEVICE_ATTR_RW(pwm1_enable);
 static DEVICE_ATTR_RO(fan1_input);
 static DEVICE_ATTR_RO(fan1_label);
 
+/* Fan2 */
+static DEVICE_ATTR_RO(fan2_input);
+static DEVICE_ATTR_RO(fan2_label);
+
 /* Temperature */
 static DEVICE_ATTR(temp1_input, S_IRUGO, asus_hwmon_temp1, NULL);
 
@@ -1905,6 +1955,8 @@ static struct attribute *hwmon_attributes[] = {
 	&dev_attr_pwm1_enable.attr,
 	&dev_attr_fan1_input.attr,
 	&dev_attr_fan1_label.attr,
+	&dev_attr_fan2_input.attr,
+	&dev_attr_fan2_label.attr,
 
 	&dev_attr_temp1_input.attr,
 	NULL
@@ -1922,6 +1974,8 @@ static umode_t asus_hwmon_sysfs_is_visible(struct kobject *kobj,
 			return 0;
 	} else if (attr == &dev_attr_fan1_input.attr
 	    || attr == &dev_attr_fan1_label.attr
+	    || attr == &dev_attr_fan2_input.attr
+	    || attr == &dev_attr_fan2_label.attr
 	    || attr == &dev_attr_pwm1_enable.attr) {
 		if (asus->fan_type == FAN_TYPE_NONE)
 			return 0;
@@ -2037,7 +2091,11 @@ static int fan_boost_mode_write(struct asus_wmi *asus)
 
 	value = asus->fan_boost_mode;
 
-	pr_info("Set fan boost mode: %u\n", value);
+	pr_info("Set fan boost mode: %s\n", (
+		value==ASUS_FAN_BOOST_MODE_NORMAL ? "normal" :
+		value==ASUS_FAN_BOOST_MODE_OVERBOOST ? "overboost" :
+		value==ASUS_FAN_BOOST_MODE_SILENT ? "silent" : "unknown"
+	));
 	err = asus_wmi_set_devstate(ASUS_WMI_DEVID_FAN_BOOST_MODE, value,
 				    &retval);
 	if (err) {
@@ -2209,7 +2267,11 @@ static int throttle_thermal_policy_write(struct asus_wmi *asus)
 
 	value = asus->throttle_thermal_policy_mode;
 
-	pr_info("Set throttle thermal policy mode: %u\n", value);
+	pr_info("Set throttle thermal policy mode: %s\n", (
+		value == ASUS_THROTTLE_THERMAL_POLICY_DEFAULT ? "default" :
+		value == ASUS_THROTTLE_THERMAL_POLICY_OVERBOOST ? "overboost" :
+		"silent"
+	));
 	sysfs_notify(&asus->platform_device->dev.kobj, NULL,
 			dev_attr_throttle_thermal_policy.attr.name);
 
@@ -2220,7 +2282,7 @@ static int throttle_thermal_policy_write(struct asus_wmi *asus)
 		return err;
 	}
 
-	if (retval != 0) {
+	if (retval < 0 || retval > 1) {
 		pr_warn("Failed to set throttle thermal policy (retval): 0x%x\n",
 			retval);
 		return -EIO;
@@ -2505,13 +2567,18 @@ static void asus_wmi_handle_event_code(int code, struct asus_wmi *asus)
 		return;
 	}
 
+	pr_info("code:%d", code);
+	pr_info("NOTIFY_KBD_FBM:%d", NOTIFY_KBD_FBM);
+	pr_info("NOTIFY_KBD_TTP:%d", NOTIFY_KBD_TTP);
 	if (asus->fan_boost_mode_available && code == NOTIFY_KBD_FBM) {
+		pr_info("fan_boost_mode_available");
 		fan_boost_mode_switch_next(asus);
 		if (!report_key_events)
 			return;
 	}
 
 	if (asus->throttle_thermal_policy_available && code == NOTIFY_KBD_TTP) {
+		pr_info("throttle_thermal_policy_available");
 		throttle_thermal_policy_switch_next(asus);
 		if (!report_key_events)
 			return;
@@ -2991,7 +3058,7 @@ static const struct key_entry asus_nb_wmi_keymap[] = {
 	{ KE_KEY, 0xA5, { KEY_SWITCHVIDEOMODE } }, /* SDSP LCD + TV + HDMI */
 	{ KE_KEY, 0xA6, { KEY_SWITCHVIDEOMODE } }, /* SDSP CRT + TV + HDMI */
 	{ KE_KEY, 0xA7, { KEY_SWITCHVIDEOMODE } }, /* SDSP LCD + CRT + TV + HDMI */
-	{ KE_KEY, NOTIFY_KBD_TTP, { KEY_FN_F5 } },
+	{ KE_KEY, NOTIFY_KBD_TTP, { /*KEY_FN_C*/ } },
 	{ KE_KEY, 0xB5, { KEY_CALC } },
 	{ KE_KEY, 0xC4, { KEY_KBDILLUMUP } },
 	{ KE_KEY, 0xC5, { KEY_KBDILLUMDOWN } },
