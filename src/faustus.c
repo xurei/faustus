@@ -50,6 +50,7 @@
 
 #include <linux/version.h>
 #if LINUX_VERSION_CODE > KERNEL_VERSION(5,6,0)
+#include <acpi/video.h>
 #include <linux/units.h>
 #else
 #define ABSOLUTE_ZERO_MILLICELSIUS -273150
@@ -354,7 +355,7 @@ static int asus_wmi_evaluate_method5(u32 method_id,
 	return 0;
 }
 
-static int asus_wmi_evaluate_method3(u32 method_id, 
+static int asus_wmi_evaluate_method3(u32 method_id,
 		u32 arg0, u32 arg1, u32 arg2, u32 *retval)
 {
 	return asus_wmi_evaluate_method5(method_id, arg0, arg1, arg2, 0, 0, retval);
@@ -1770,6 +1771,7 @@ static ssize_t fan1_input_show(struct device *dev,
 		ret = asus_wmi_get_devstate(asus, ASUS_WMI_DEVID_CPU_FAN_CTRL,
 					    &value);
 		if (ret < 0)
+			pr_info("reading fan speed failed: %d\n", ret);
 			return ret;
 
 		value &= 0xffff;
@@ -1979,7 +1981,7 @@ static int asus_wmi_fan_init(struct asus_wmi *asus)
 		pr_info("AGFN fan found");
 		asus->fan_type = FAN_TYPE_AGFN;
 	}
-	else 
+	else
 	{
 		pr_info("It seems that newer models don't have verification for method");
 		asus->fan_type = FAN_TYPE_SPEC83;
@@ -2208,7 +2210,7 @@ static int throttle_thermal_policy_write(struct asus_wmi *asus)
 	value = asus->throttle_thermal_policy_mode;
 
 	pr_info("Set throttle thermal policy mode: %u\n", value);
-	sysfs_notify(&asus->platform_device->dev.kobj, NULL, 
+	sysfs_notify(&asus->platform_device->dev.kobj, NULL,
 			dev_attr_throttle_thermal_policy.attr.name);
 
 	err = asus_wmi_set_devstate(ASUS_WMI_DEVID_THROTTLE_THERMAL_POLICY,
@@ -3290,6 +3292,62 @@ static const struct dmi_system_id atw_dmi_list[] __initconst = {
 			DMI_MATCH(DMI_PRODUCT_NAME, "FX505DV"),
 		},
 	},
+	{
+		.callback = dmi_check_callback,
+		.ident = "FA506IU",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "ASUSTeK COMPUTER INC."),
+			DMI_MATCH(DMI_PRODUCT_NAME, "FA506IU"),
+		},
+	},
+	{
+		.callback = dmi_check_callback,
+		.ident = "FA506IH",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "ASUSTeK COMPUTER INC."),
+			DMI_MATCH(DMI_PRODUCT_NAME, "FA506IH"),
+		},
+	},
+	{
+		.callback = dmi_check_callback,
+		.ident = "FA506II",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "ASUSTeK COMPUTER INC."),
+			DMI_MATCH(DMI_PRODUCT_NAME, "FA506II"),
+		},
+	},
+	{
+		.callback = dmi_check_callback,
+		.ident = "FA506IV",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "ASUSTeK COMPUTER INC."),
+			DMI_MATCH(DMI_PRODUCT_NAME, "FA506IV"),
+		},
+	},
+	{
+		.callback = dmi_check_callback,
+		.ident = "FA706IU",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "ASUSTeK COMPUTER INC."),
+			DMI_MATCH(DMI_PRODUCT_NAME, "FA706IU"),
+		},
+	},
+	{
+		.callback = dmi_check_callback,
+		.ident = "FA706IH",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "ASUSTeK COMPUTER INC."),
+			DMI_MATCH(DMI_PRODUCT_NAME, "FA706IH"),
+		},
+	},
+	{
+		.callback = dmi_check_callback,
+		.ident = "FA706IU",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "ASUSTeK COMPUTER INC."),
+			DMI_MATCH(DMI_PRODUCT_NAME, "FA706IU"),
+		},
+	},
 	{}
 };
 
@@ -3343,6 +3401,6 @@ static void __exit atw_cleanup(void)
 	platform_driver_unregister(&atw_platform_driver);
 	platform_device_unregister(atw_platform_dev);
 }
- 
+
 module_init(atw_init);
 module_exit(atw_cleanup);
