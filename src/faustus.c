@@ -2568,8 +2568,6 @@ static void asus_wmi_handle_event_code(int code, struct asus_wmi *asus)
 	}
 
 	pr_info("code:%d", code);
-	pr_info("NOTIFY_KBD_FBM:%d", NOTIFY_KBD_FBM);
-	pr_info("NOTIFY_KBD_TTP:%d", NOTIFY_KBD_TTP);
 	if (asus->fan_boost_mode_available && code == NOTIFY_KBD_FBM) {
 		pr_info("fan_boost_mode_available");
 		fan_boost_mode_switch_next(asus);
